@@ -54,8 +54,11 @@ const reply = (body, status = 200) => new Response(body, {
   },
 });
 
-async function relay(request, ctx) {
+async function relay(request, env, ctx) {
   if (request.method !== "POST") return reply("POST only", 405);
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const { success } = await env.RELAY_LIMIT.limit({ key: ip });
+  if (!success) return reply("Rate limited", 429);
   // Browsers say where a request came from; refuse other sites' pages.
   const site = request.headers.get("Sec-Fetch-Site");
   if (site && site !== "same-origin") return reply("Forbidden", 403);
@@ -95,7 +98,7 @@ async function relay(request, ctx) {
 export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
-    if (pathname === `${BASE}/api/info`) return relay(request, ctx);
+    if (pathname === `${BASE}/api/info`) return relay(request, env, ctx);
     return env.ASSETS.fetch(request);
   },
 };

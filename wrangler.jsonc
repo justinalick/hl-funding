@@ -14,6 +14,13 @@
     // Only the relay runs code; every other path is a static file.
     "run_worker_first": ["/projects/hl-funding/api/*"]
   },
+  // Per-IP cap on the API relay. A full-history load of the busiest market
+  // makes about 75 calls in under a minute, so 120 leaves headroom for real
+  // use while stopping anyone looping the relay. Counters live in Cloudflare
+  // memory only; nothing is stored.
+  "ratelimits": [
+    { "name": "RELAY_LIMIT", "namespace_id": "1002", "simple": { "limit": 120, "period": 60 } }
+  ],
   "routes": [
     { "pattern": "justinalick.com/projects/hl-funding*", "zone_name": "justinalick.com" }
   ],
