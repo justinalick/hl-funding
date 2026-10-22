@@ -1,0 +1,29 @@
+// Worker for justinalick.com/projects/hl-funding: static page plus the
+// same-origin API relay in src/worker.js. The route outranks the main site's
+// custom domain on that path only.
+{
+  "$schema": "https://unpkg.com/wrangler@4/config-schema.json",
+  "name": "hl-funding",
+  "compatibility_date": "2026-10-01",
+  "main": "./src/worker.js",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none",
+    // Only the relay runs code; every other path is a static file.
+    "run_worker_first": ["/projects/hl-funding/api/*"]
+  },
+  "routes": [
+    { "pattern": "justinalick.com/projects/hl-funding*", "zone_name": "justinalick.com" }
+  ],
+  // No request logs or traces; the site's privacy policy promises none are kept.
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false, "invocation_logs": false },
+    "traces": { "enabled": false }
+  },
+  // Served only on justinalick.com.
+  "workers_dev": false,
+  "preview_urls": false
+}

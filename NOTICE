@@ -1,0 +1,26 @@
+Hyperliquid funding dashboard
+Copyright (c) 2026 Justin Alick
+
+The MIT License in LICENSE applies to the source code and documentation in
+this repository.
+
+It does NOT apply to the following "Brand Assets", which are excluded and for
+which all rights are reserved:
+
+  1. The name "Justin Alick" and the handle "@justinalick".
+  2. The CryptoPunk image embedded in index.html (a data: URI PNG in the page
+     byline). The CryptoPunks artwork is subject to the rights of its IP
+     holder and is used here under the holder's license. No rights in it are
+     granted by this repository.
+  3. The @justinalick visual identity as applied in index.html, including the
+     byline, the "vape" title bar, the framed layout, and the LED signal
+     convention.
+
+If you copy, fork, or redistribute this project, you must remove or replace
+the Brand Assets and must not present your version as made or endorsed by
+Justin Alick. Attribution in the form "Based on work by Justin Alick" is
+welcome.
+
+Third-party code (Chart.js, MIT) and fonts (IBM Plex, SIL OFL 1.1) are
+vendored in vendor/ and remain under their own licenses, included alongside
+them. Data comes from the public Hyperliquid info API.

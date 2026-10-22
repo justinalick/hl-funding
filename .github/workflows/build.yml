@@ -1,0 +1,22 @@
+# Builds on every push and PR. Deploys run from the private site repo, so no
+# Cloudflare token ever lives in this public repository.
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/build.mjs
+      - run: node --check src/worker.js

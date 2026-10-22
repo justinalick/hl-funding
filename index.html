@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hyperliquid funding, @justinalick</title>
+<script>
+// Saved theme before first paint; default follows the system (night when dark).
+(function(){ try { var s = localStorage.getItem("theme"); if (s === "night" || s === "paper") document.documentElement.dataset.theme = s; } catch (e) {} })();
+</script>
+<link rel="stylesheet" href="vendor/fonts/fonts.css">
+<script src="vendor/chartjs/chart.umd.min.js"></script>
+<style>
+:root {
+  --punk-slate: #638596;
+  --punk-skin: #DBB180;
+  --punk-ink: #000000;
+  --punk-grey: #595959;
+  --punk-brow: #A66E2C;
+  --punk-highlight: #F0D6B4;
+  --punk-led: #0044FF;
+  --unit: 24px;
+  --ground: #212E38;
+  --panel: #2A3945;
+  --ink: #F7F3EC;
+  --muted: #B8C6CE;
+  --faint: #8A9BA5;
+  --grid: #2D3C47;
+  --axis: #3D4E5A;
+  --frame: #000000;
+  --accent: #DBB180;
+  --actual: #DBB180;
+  --model: #6CA6D4;
+  --ref: #C08A4A;
+  --signal: #6B92FF;
+  --tint-actual: #414444;
+  --tint-model: #2E4253;
+  --rod: #595959;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="night"]) {
+    --ground: #F3EEE6;
+    --panel: #FFFFFF;
+    --ink: #111111;
+    --muted: #4F5E66;
+    --faint: #8A949A;
+    --grid: #E3DCD0;
+    --axis: #CFC6B8;
+    --frame: #000000;
+    --accent: #8A5A22;
+    --actual: #111111;
+    --model: #3F6273;
+    --ref: #8A5A22;
+    --signal: #0044FF;
+    --tint-actual: #DCD8D1;
+    --tint-model: #E1E0DA;
+    --rod: #595959;
+    color-scheme: light;
+  }
+}
+:root[data-theme="paper"] {
+  --ground: #F3EEE6;
+  --panel: #FFFFFF;
+  --ink: #111111;
+  --muted: #4F5E66;
+  --faint: #8A949A;
+  --grid: #E3DCD0;
+  --axis: #CFC6B8;
+  --frame: #000000;
+  --accent: #8A5A22;
+  --actual: #111111;
+  --model: #3F6273;
+  --ref: #8A5A22;
+  --signal: #0044FF;
+  --tint-actual: #DCD8D1;
+  --tint-model: #E1E0DA;
+  --rod: #595959;
+  color-scheme: light;
+}
+
+/* Sign colors. Warm = longs pay, cool = longs receive, in both themes.
+   Night: actual (skin) vs model (lifted slate). Paper: punk brow vs model;
+   text uses the darker accent step so small figures pass contrast. */
+:root { --pos:var(--actual); --pos-text:var(--actual); --neg:var(--model); --neg-text:var(--model); }
+@media (prefers-color-scheme: light) { :root:not([data-theme="night"]) { --pos:var(--punk-brow); --pos-text:var(--accent); } }
+:root[data-theme="paper"] { --pos:var(--punk-brow); --pos-text:var(--accent); }
+:root { --sans:"IBM Plex Sans", system-ui, sans-serif; --mono:"IBM Plex Mono", "IBM Plex Sans", ui-monospace, monospace; }
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html { scrollbar-color: var(--axis) var(--ground); -webkit-text-size-adjust:100%; }
+body {
+  background:var(--ground); color:var(--ink);
+  font:400 15px/1.5 var(--sans);
+  border:4px solid var(--frame); min-height:100vh;
+  padding:var(--unit) 16px calc(var(--unit) * 2);
+}
+.mono { font-family:var(--mono); }
+.wrap { max-width:1296px; margin:0 auto; }
+a { color:inherit; text-decoration-color:var(--faint); text-underline-offset:3px; }
+a:hover { text-decoration-color:var(--ink); }
+
+/* ---------- header ---------- */
+header { display:flex; justify-content:space-between; align-items:flex-start; gap:var(--unit); margin-bottom:12px; }
+.title { display:inline-block; }
+header h1 { font:600 1.75rem/1.15 var(--sans); letter-spacing:-0.01em; color:var(--ink); }
+.vape { display:block; height:8px; margin-top:8px; background:linear-gradient(to right, var(--punk-grey) calc(100% - 8px), var(--punk-led) 0); }
+.byline { display:flex; align-items:center; gap:12px; flex-shrink:0; }
+.handle { font:600 0.9375rem/1 var(--mono); text-decoration:none; }
+.punk { display:block; width:48px; height:48px; image-rendering:pixelated; image-rendering:crisp-edges; background:var(--punk-slate); }
+.theme-toggle { background:none; border:1px solid var(--axis); color:var(--muted); width:32px; height:32px; cursor:pointer; }
+.theme-toggle:hover { color:var(--ink); border-color:var(--ink); }
+.theme-toggle .dot { display:block; width:14px; height:14px; margin:auto; border:2px solid currentColor; border-radius:50%; background:linear-gradient(to right, currentColor 50%, transparent 0); }
+.convention { font:400 0.8125rem/1.5 var(--mono); color:var(--muted); margin-bottom:var(--unit); }
+.convention b { color:var(--ink); font-weight:600; }
+
+/* ---------- controls ---------- */
+.controls {
+  display:grid; grid-template-columns: 160px minmax(200px,1fr) auto auto auto; gap:12px;
+  background:var(--panel); border:1px solid var(--axis); padding:16px;
+  margin-bottom:12px; align-items:center;
+}
+label.ctl { display:flex; flex-direction:column; gap:6px; font:600 0.6875rem/1 var(--mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); }
+select, input[type=text] {
+  background:var(--ground); border:1px solid var(--axis); color:var(--ink);
+  border-radius:0; padding:8px 10px; font:400 0.8125rem/1.3 var(--mono);
+  outline:none; width:100%; height:36px;
+}
+select:focus, input[type=text]:focus { border-color:var(--ink); }
+button:focus-visible, a:focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
+.combo { position:relative; }
+.combo-list {
+  position:absolute; z-index:30; top:calc(100% + 4px); left:0; right:0; max-height:320px; overflow-y:auto;
+  background:var(--panel); border:1px solid var(--ink); display:none;
+}
+.combo-list.open { display:block; }
+.combo-group { padding:8px 10px 4px; font:600 0.625rem/1 var(--mono); text-transform:uppercase; letter-spacing:0.1em; color:var(--faint); position:sticky; top:0; background:var(--panel); }
+.combo-item { padding:6px 10px; font:400 0.8125rem/1.3 var(--mono); color:var(--ink); cursor:pointer; display:flex; justify-content:space-between; gap:8px; text-transform:none; letter-spacing:0; }
+.combo-item .dl { color:var(--faint); font-size:0.6875rem; }
+.combo-item:hover, .combo-item.active { background:var(--ground); }
+.seg { display:flex; border:1px solid var(--axis); height:36px; }
+.seg button {
+  background:var(--ground); border:none; color:var(--muted); padding:0 12px;
+  font:400 0.75rem/1 var(--mono); cursor:pointer; border-right:1px solid var(--axis);
+}
+.seg button:last-child { border-right:none; }
+.seg button:hover { color:var(--ink); }
+.seg button.sel { background:var(--ink); color:var(--ground); font-weight:600; }
+#loadBtn {
+  background:transparent; color:var(--ink); border:2px solid var(--ink); border-radius:0;
+  font:600 0.875rem/1 var(--mono); height:36px; padding:0 18px; cursor:pointer;
+  align-self:end; min-width:132px;
+}
+#loadBtn:hover { background:var(--ground); }
+#loadBtn:disabled { border-color:var(--axis); color:var(--faint); cursor:default; background:transparent; }
+#loadBtn.abort { background:var(--ink); color:var(--ground); }
+.status { grid-column:1 / -1; font:400 0.75rem/1.4 var(--mono); color:var(--muted); min-height:1.1em; }
+.status.err { color:var(--ink); font-weight:600; }
+/* Progress is the vape bar filling: grey rod, LED tip. */
+.progress { height:8px; background:var(--grid); overflow:hidden; grid-column:1 / -1; display:none; }
+.progress.on { display:block; }
+.progress > div { height:100%; width:0%; background:linear-gradient(to right, var(--punk-grey) calc(100% - 8px), var(--punk-led) 0); transition:width 0.25s; }
+
+/* ---------- market strip ---------- */
+.mktstrip { display:none; flex-wrap:wrap; gap:6px 24px; align-items:center; padding:10px 16px; background:var(--panel); border:1px solid var(--axis); margin-bottom:12px; font:400 0.8125rem/1.4 var(--mono); }
+.mktstrip.on { display:flex; }
+.coin-badge { display:inline-block; padding:2px 8px; font:600 0.8125rem/1.3 var(--mono); border:1px solid var(--ink); color:var(--ink); }
+.kv { color:var(--muted); }
+.kv b { color:var(--ink); font-weight:600; margin-left:6px; }
+
+/* ---------- regime tape ---------- */
+.tapebox { display:none; background:var(--panel); border:1px solid var(--axis); padding:12px 16px 10px; margin-bottom:12px; }
+.tapebox.on { display:block; }
+.tapebox .tlab { display:flex; flex-wrap:wrap; gap:4px 16px; justify-content:space-between; font:600 0.6875rem/1.4 var(--mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-bottom:8px; }
+.sw { display:inline-block; width:10px; height:10px; vertical-align:-1px; margin-right:4px; }
+#tape { width:100%; height:36px; display:block; cursor:crosshair; }
+#tapeinfo { font:400 0.75rem/1.4 var(--mono); color:var(--muted); margin-top:6px; min-height:1em; }
+
+/* ---------- cards ---------- */
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:12px; }
+.card { background:var(--panel); border:1px solid var(--axis); padding:12px 14px; }
+.card .cl { font:600 0.6875rem/1.3 var(--mono); text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-bottom:6px; }
+.card .cv { font:600 1.25rem/1.25 var(--mono); color:var(--ink); }
+.card .cs { font:400 0.6875rem/1.4 var(--mono); color:var(--faint); margin-top:4px; }
+.pos { color:var(--pos-text) !important; } .neg { color:var(--neg-text) !important; }
+
+/* ---------- panels ---------- */
+.panel { background:var(--panel); border:1px solid var(--axis); padding:16px; margin-bottom:12px; }
+.panel h2 { font:600 0.8125rem/1.4 var(--mono); color:var(--ink); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:12px; }
+.panel h2 span { color:var(--faint); font-weight:400; text-transform:none; letter-spacing:0; margin-left:8px; font-size:0.75rem; }
+.chartbox { position:relative; height:288px; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+table { width:100%; border-collapse:collapse; font:400 0.78rem/1.4 var(--mono); }
+th { text-align:right; padding:6px 10px; color:var(--muted); font-weight:600; font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid var(--axis); }
+th:first-child, td:first-child { text-align:left; }
+td { text-align:right; padding:6px 10px; border-bottom:1px solid var(--grid); color:var(--ink); }
+td:first-child { color:var(--muted); }
+tr:last-child td { border-bottom:none; }
+.hide { display:none !important; }
+.empty { text-align:center; color:var(--muted); padding:48px 16px; font-size:0.9375rem; }
+footer { font:400 0.75rem/1.5 var(--mono); color:var(--faint); margin-top:var(--unit); }
+footer a { color:var(--muted); }
+@media (max-width:900px) {
+  .controls { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  .combo { grid-column:1 / -1; }
+}
+@media (max-width:600px) {
+  .controls > label.ctl, #loadBtn { grid-column:1 / -1; }
+  .seg button { flex:1; padding:0 6px; }
+  #loadBtn { width:100%; }
+  .grid2 { grid-template-columns:1fr; }
+  .chartbox { height:240px; }
+}
+@media (max-width:34rem) { .handle { display:none; } header h1 { font-size:1.375rem; } }
+@media (prefers-reduced-motion: reduce) { .progress > div { transition:none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="title"><h1>Hyperliquid funding</h1><span class="vape" aria-hidden="true"></span></div>
+  <div class="byline">
+    <button class="theme-toggle" type="button" aria-label="Switch light or dark theme" id="themeBtn"><span class="dot" aria-hidden="true"></span></button>
+    <a class="handle" href="https://x.com/justinalick" rel="me noopener">@justinalick</a>
+    <a href="https://justinalick.com" aria-label="justinalick.com"><img class="punk" width="48" height="48" alt="Pixel-art punk, the @justinalick avatar" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAA+UlEQVR4nLWVvRWCMBSFLx5XcIRsoBM4AI1NaOlYgSYNC1DQ0UpjQ68TaGnHCAyhlfgIIckjJ7fiXHLux/s5Icmr5oOI2nEOt2URD9CWBaSUbAirgi2KDti7Dpha8vPyqgkDtGWBoVcAAJGqyf97hROSrK0pDT+II8bhZQwQqbJCnDOwhfvICQgJ9wKEyrlFAPB83AAAp/Nl4blkrIAOGACy+j0LX/O8AboozOaxAHTvQ2QE2PZapIoF9xoylW9r2AB9a7L6PT3r9xXtAKsCGiqlXLzvxitwT2YeC0DbY55Dt3C8AfrOD71yXnQsgOmLg/8HWwJ1Rb/svsSFWLklYsjAAAAAAElFTkSuQmCC"></a>
+  </div>
+</header>
+<div class="convention">hourly rates &middot; <b>positive = longs pay shorts</b> &middot; <span id="convMode">annualized = &Sigma;r &times; 8760/T<sub>hrs</sub> (linear, wall-clock)</span></div>
+
+<div class="controls">
+  <label class="ctl">Dex
+    <select id="dexSel"><option value="__all__">All dexs</option></select>
+  </label>
+  <label class="ctl combo">Market
+    <input type="text" id="coinInput" placeholder="Search any perp: SP500, BTC, GOLD, JPY…" autocomplete="off" spellcheck="false">
+    <div class="combo-list" id="comboList"></div>
+  </label>
+  <label class="ctl">History
+    <div class="seg" id="rangeSeg">
+      <button data-d="0" class="sel">Inception</button>
+      <button data-d="365">1Y</button>
+      <button data-d="180">180D</button>
+      <button data-d="90">90D</button>
+    </div>
+  </label>
+  <label class="ctl">Mode
+    <div class="seg" id="modeSeg">
+      <button data-m="linear" class="sel">&Sigma; linear</button>
+      <button data-m="compound">&Pi; compound</button>
+    </div>
+  </label>
+  <button id="loadBtn" disabled>Load funding</button>
+  <div class="progress" id="prog"><div id="progBar"></div></div>
+  <div class="status" id="status">Loading market universe…</div>
+</div>
+
+<div class="mktstrip" id="mktstrip">
+  <span class="coin-badge" id="msCoin"></span>
+  <span class="kv">dex<b id="msDex"></b></span>
+  <span class="kv">mark<b id="msMark"></b></span>
+  <span class="kv">oracle<b id="msOracle"></b></span>
+  <span class="kv">OI<b id="msOI"></b></span>
+  <span class="kv">24h vol<b id="msVol"></b></span>
+  <span class="kv">premium<b id="msPrem"></b></span>
+</div>
+
+<div class="tapebox" id="tapebox">
+  <div class="tlab"><span>Daily funding tape · one column per UTC day &middot; opacity vs p99 (&radic; scale)</span><span><span><span class="sw" style="background:var(--pos)"></span>longs pay &nbsp; <span class="sw" style="background:var(--neg)"></span>longs receive</span></span></div>
+  <canvas id="tape"></canvas>
+  <div id="tapeinfo">hover for daily detail</div>
+</div>
+
+<div class="cards hide" id="cards">
+  <div class="card"><div class="cl">Cumulative <span id="rangeTag1"></span></div><div class="cv" id="cCum">—</div><div class="cs" id="cCumBps"></div></div>
+  <div class="card"><div class="cl">Annualized <span id="rangeTag2"></span></div><div class="cv" id="cAnn">—</div><div class="cs" id="cAnnNote"></div></div>
+  <div class="card"><div class="cl">7d trailing</div><div class="cv" id="c7">—</div><div class="cs">annualized</div></div>
+  <div class="card"><div class="cl">30d trailing</div><div class="cv" id="c30">—</div><div class="cs">annualized</div></div>
+  <div class="card"><div class="cl">90d trailing</div><div class="cv" id="c90">—</div><div class="cs">annualized</div></div>
+  <div class="card"><div class="cl">Current rate</div><div class="cv" id="cNow">—</div><div class="cs" id="cNowSub">annualized</div></div>
+  <div class="card"><div class="cl">Hours positive</div><div class="cv" id="cPos">—</div><div class="cs" id="cPosSub"></div></div>
+  <div class="card"><div class="cl">Span</div><div class="cv" id="cSpan" style="font-size:0.95rem">—</div><div class="cs" id="cSpanSub"></div></div>
+</div>
+
+<div class="panel hide" id="pCum">
+  <h2>Cumulative funding <span id="cumSub">running &Sigma; of hourly rates, %</span></h2>
+  <div class="chartbox"><canvas id="chCum"></canvas></div>
+</div>
+
+<div class="panel hide" id="pRoll">
+  <h2>Rolling annualized funding <span>30d solid &middot; 7d faint &middot; sign-colored &middot; time-based windows</span></h2>
+  <div class="chartbox"><canvas id="chRoll"></canvas></div>
+</div>
+
+<div class="panel hide" id="pPrem">
+  <h2>Realized funding vs premium-implied <span id="premSub"></span></h2>
+  <div class="chartbox"><canvas id="chPrem"></canvas></div>
+</div>
+
+<div class="grid2">
+  <div class="panel hide" id="pHist">
+    <h2>Rate distribution <span>hourly prints, annualized · % of hours</span></h2>
+    <div class="chartbox" style="height:240px"><canvas id="chHist"></canvas></div>
+  </div>
+  <div class="panel hide" id="pStats">
+    <h2>Persistence &amp; tails</h2>
+    <table><tbody id="statsBody"></tbody></table>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="panel hide" id="pMonBar">
+    <h2>Calendar months <span>annualized %</span></h2>
+    <div class="chartbox" style="height:240px"><canvas id="chMon"></canvas></div>
+  </div>
+  <div class="panel hide" id="pMonTab">
+    <h2>Monthly detail</h2>
+    <div style="max-height:240px; overflow-y:auto">
+    <table><thead><tr><th>Month</th><th>Cum bps</th><th>Annualized</th><th>Hrs +</th></tr></thead><tbody id="monBody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="panel hide" id="pWorst">
+    <h2>Heaviest days, longs received <span>most negative</span></h2>
+    <table><thead><tr><th>Date</th><th>Day bps</th><th>Day annualized</th></tr></thead><tbody id="worstBody"></tbody></table>
+  </div>
+  <div class="panel hide" id="pBest">
+    <h2>Heaviest days, longs paid <span>most positive</span></h2>
+    <table><thead><tr><th>Date</th><th>Day bps</th><th>Day annualized</th></tr></thead><tbody id="bestBody"></tbody></table>
+  </div>
+</div>
+
+<div class="panel" id="emptyPanel"><div class="empty">Pick a market to pull its full funding tape.</div></div>
+
+<footer>data: api.hyperliquid.xyz, relayed by justinalick.com so your browser never contacts it &middot; paginated 500 events/call, adaptive backoff &middot; interest rate estimated per market from clamp-bound prints</footer>
+
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   HL FUNDING TERMINAL v2 — single file, no backend.
+   v2: premium-implied overlay w/ per-market interest estimation,
+   distribution & persistence stats, linear/compound toggle,
+   wall-clock annualization, time-based rolling windows,
+   p99 tape scaling, abortable fetch.
+   ============================================================ */
+// Same-origin proxy on the site (see src/worker.js); straight to Hyperliquid when opened as a local file.
+const API = location.protocol === "file:" ? "https://api.hyperliquid.xyz/info" : "/projects/hl-funding/api/info";
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ---------- adaptive API client ---------- */
+let apiDelay = 300;
+async function apiPost(body) {
+  for (let attempt = 0; attempt < 7; attempt++) {
+    let res;
+    try {
+      res = await fetch(API, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+    } catch (e) {
+      await sleep(800 * (attempt + 1)); continue;
+    }
+    if (res.status === 429) { apiDelay = Math.min(apiDelay * 2, 5000); await sleep(apiDelay); continue; }
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    apiDelay = Math.max(300, apiDelay * 0.9);
+    return res.json();
+  }
+  throw new Error("API unreachable after retries (rate limited or offline)");
+}
+
+/*__CORE__*/
+/* ---------- pure metric core (no DOM) ---------- */
+const HR = 3.6e6, DAY = 86400e3;
+function clampNum(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+function utcDay(ms) { return new Date(ms).toISOString().slice(0,10); }
+function monthKey(ms) { return new Date(ms).toISOString().slice(0,7); }
+function quantileSorted(a, q) { if (!a.length) return NaN; const i = clampNum(Math.floor(a.length * q), 0, a.length - 1); return a[i]; }
+
+function buildSeries(events) {
+  const m = new Map();
+  for (const e of events) {
+    m.set(e.time, [parseFloat(e.fundingRate), e.premium == null ? NaN : parseFloat(e.premium)]);
+  }
+  const times = [...m.keys()].sort((a,b)=>a-b);
+  const n = times.length;
+  const rates = new Array(n), prems = new Array(n);
+  for (let i = 0; i < n; i++) { const v = m.get(times[i]); rates[i] = v[0]; prems[i] = v[1]; }
+  return { times, rates, prems };
+}
+
+// annualization — wall-clock hours, both conventions
+const annLin = (sum, hrs)  => hrs > 0 ? sum * 8760 / hrs * 100 : NaN;
+const annCmp = (dlog, hrs) => hrs > 0 ? Math.expm1(dlog * 8760 / hrs) * 100 : NaN;
+
+// autocorrelation at lag k
+function autocorr(x, k, mu) {
+  const n = x.length; if (n <= k + 1) return NaN;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) den += (x[i]-mu)*(x[i]-mu);
+  for (let i = 0; i + k < n; i++) num += (x[i]-mu)*(x[i+k]-mu);
+  return den > 0 ? num/den : NaN;
+}
+
+function computeAll(times, rates, prems) {
+  const n = rates.length;
+  if (!n) return null;
+  const first = times[0], last = times[n-1];
+  const hoursLife = (last - first) / HR + 1;           // each print covers its preceding hour
+
+  // prefix sums (linear + log for compounding)
+  const Slin = new Array(n), Slog = new Array(n);
+  let sl = 0, sg = 0, posH = 0;
+  for (let i = 0; i < n; i++) {
+    sl += rates[i]; sg += Math.log1p(rates[i]);
+    Slin[i] = sl; Slog[i] = sg;
+    if (rates[i] > 0) posH++;
+  }
+  const sumR  = (lo, hi) => Slin[hi] - (lo > 0 ? Slin[lo-1] : 0);
+  const dlogR = (lo, hi) => Slog[hi] - (lo > 0 ? Slog[lo-1] : 0);
+  const upperBound = t => { // first index with times[i] > t
+    let lo = 0, hi = n;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (times[m] <= t) lo = m + 1; else hi = m; }
+    return lo;
+  };
+
+  // ---- interest-rate estimation (8h basis) from clamp-bound prints ----
+  // when |P| < 0.04% the clamp binds for any plausible I, so funding pins to I/8 exactly
+  const qual = [];
+  for (let i = 0; i < n; i++) if (Number.isFinite(prems[i]) && Math.abs(prems[i]) < 4e-4) qual.push(rates[i]);
+  qual.sort((a,b)=>a-b);
+  let interest8h = 1e-4, interestEst = false;
+  if (qual.length >= 20) { interest8h = quantileSorted(qual, 0.5) * 8; interestEst = true; }
+  const impliedAt = i => Number.isFinite(prems[i])
+    ? (prems[i] + clampNum(interest8h - prems[i], -5e-4, 5e-4)) / 8
+    : NaN;
+  let premCovered = 0, residSum = [], residAbs = [];
+  for (let i = 0; i < n; i++) {
+    if (!Number.isFinite(prems[i])) continue;
+    premCovered++;
+    const r = rates[i] - impliedAt(i);
+    residSum.push(r); residAbs.push(Math.abs(r));
+  }
+  residAbs.sort((a,b)=>a-b);
+  const premCoverage = premCovered / n;
+  const residMedAnnPct = residAbs.length ? annLin(quantileSorted(residAbs, 0.5), 1) : NaN;
+
+  // ---- daily aggregation (UTC) ----
+  const dayOrder = []; const dayIdx = new Map();
+  for (let i = 0; i < n; i++) {
+    const d = utcDay(times[i]);
+    let rec = dayIdx.get(d);
+    if (!rec) { rec = { sum:0, hours:0, lastI:i, premSum:0, premN:0, implSum:0, implOk:true }; dayIdx.set(d, rec); dayOrder.push(d); }
+    rec.sum += rates[i]; rec.hours++; rec.lastI = i;
+    if (Number.isFinite(prems[i])) { rec.premSum += prems[i]; rec.premN++; rec.implSum += impliedAt(i); }
+    else rec.implOk = false;
+  }
+  const D = dayOrder.length;
+  const daily = {
+    labels: dayOrder,
+    hours:  dayOrder.map(d => dayIdx.get(d).hours),
+    bps:    dayOrder.map(d => dayIdx.get(d).sum * 1e4),
+    cumLin: dayOrder.map(d => Slin[dayIdx.get(d).lastI] * 100),
+    cumCmp: dayOrder.map(d => Math.expm1(Slog[dayIdx.get(d).lastI]) * 100),
+    annReal: dayOrder.map(d => { const r = dayIdx.get(d); return annLin(r.sum, r.hours); }),
+    annImpl: dayOrder.map(d => { const r = dayIdx.get(d); return r.implOk && r.premN ? annLin(r.implSum, r.hours) : null; }),
+    premBps: dayOrder.map(d => { const r = dayIdx.get(d); return r.premN ? r.premSum / r.premN * 1e4 : null; })
+  };
+
+  // daily-level residual between realized and premium-implied (matches the plotted series)
+  const dres = [];
+  for (let di = 0; di < D; di++) {
+    if (daily.annReal[di] != null && daily.annImpl[di] != null) dres.push(Math.abs(daily.annReal[di] - daily.annImpl[di]));
+  }
+  dres.sort((a,b)=>a-b);
+  const residDailyMedAnnPct = dres.length ? quantileSorted(dres, 0.5) : NaN;
+
+  // ---- rolling windows: TIME-based (missing prints = zero-funding hours) ----
+  function rollingSeries(winHours) {
+    const winMs = winHours * HR;
+    const outL = new Array(D).fill(null), outC = new Array(D).fill(null);
+    let lo = 0;
+    for (let di = 0; di < D; di++) {
+      const i = dayIdx.get(dayOrder[di]).lastI, T = times[i];
+      while (times[lo] <= T - winMs) lo++;
+      if (T - first < (winHours - 0.5) * HR) continue;   // window not yet covered
+      outL[di] = annLin(sumR(lo, i), winHours);
+      outC[di] = annCmp(dlogR(lo, i), winHours);
+    }
+    return { lin: outL, cmp: outC };
+  }
+  const roll30 = rollingSeries(720), roll7 = rollingSeries(168);
+
+  // ---- trailing windows: wall-clock cutoff + wall-clock annualization ----
+  const trailing = {};
+  for (const dcount of [7, 30, 90, 365]) {
+    if (last - first < dcount * DAY * 0.97) { trailing[dcount] = null; continue; }
+    const cutoff = last - dcount * 24 * HR;
+    const lo = upperBound(cutoff);
+    trailing[dcount] = { lin: annLin(sumR(lo, n-1), dcount*24), cmp: annCmp(dlogR(lo, n-1), dcount*24) };
+  }
+
+  // ---- calendar months (wall-clock hours within observed span) ----
+  const monOrder = []; const mon = new Map();
+  for (let i = 0; i < n; i++) {
+    const k = monthKey(times[i]);
+    let r = mon.get(k);
+    if (!r) { r = { sum:0, dlog:0, pos:0, prints:0, firstT:times[i], lastT:times[i] }; mon.set(k, r); monOrder.push(k); }
+    r.sum += rates[i]; r.dlog += Math.log1p(rates[i]); r.prints++;
+    if (rates[i] > 0) r.pos++;
+    r.lastT = times[i];
+  }
+  const monthly = monOrder.map(k => {
+    const r = mon.get(k);
+    const hrs = (r.lastT - r.firstT) / HR + 1;
+    return { month:k, bps:r.sum*1e4, annLin:annLin(r.sum,hrs), annCmp:annCmp(r.dlog,hrs), posPct:r.pos/r.prints*100, hours:hrs };
+  });
+
+  // ---- distribution moments (hourly rates) ----
+  const mu = Slin[n-1] / n;
+  let m2 = 0, m3 = 0, m4 = 0;
+  for (let i = 0; i < n; i++) { const d = rates[i]-mu; const d2 = d*d; m2 += d2; m3 += d2*d; m4 += d2*d2; }
+  m2 /= n; m3 /= n; m4 /= n;
+  const sd = Math.sqrt(m2);
+  const skew = sd > 0 ? m3 / Math.pow(m2, 1.5) : NaN;
+  const exKurt = m2 > 0 ? m4 / (m2*m2) - 3 : NaN;
+  const ac1 = autocorr(rates, 1, mu), ac24 = autocorr(rates, 24, mu);
+  const halfLife = (ac1 > 0 && ac1 < 1) ? Math.log(0.5)/Math.log(ac1) : NaN;   // hours, AR(1) approx
+
+  // ---- streaks ----
+  let streakPos = {len:0, end:null}, streakNeg = {len:0, end:null}, curLen = 0, curSign = 0;
+  for (let i = 0; i < n; i++) {
+    const s = rates[i] > 0 ? 1 : rates[i] < 0 ? -1 : 0;
+    if (s !== 0 && s === curSign) curLen++;
+    else { curLen = s !== 0 ? 1 : 0; curSign = s; }
+    if (s === 1 && curLen > streakPos.len)  streakPos = { len:curLen, end:times[i] };
+    if (s === -1 && curLen > streakNeg.len) streakNeg = { len:curLen, end:times[i] };
+  }
+
+  // ---- max drawdown of the carry curves (bps, on linear Σ) ----
+  let peak = 0, peakT = first, ddS = 0, ddSFrom = first, ddSTo = first;
+  let trough = 0, troughT = first, ddL = 0, ddLFrom = first, ddLTo = first;
+  for (let i = 0; i < n; i++) {
+    const c = Slin[i];
+    if (c > peak) { peak = c; peakT = times[i]; }
+    if (peak - c > ddS) { ddS = peak - c; ddSFrom = peakT; ddSTo = times[i]; }
+    if (c < trough) { trough = c; troughT = times[i]; }
+    if (c - trough > ddL) { ddL = c - trough; ddLFrom = troughT; ddLTo = times[i]; }
+  }
+
+  // ---- histogram of hourly prints, annualized % ----
+  const annVals = rates.map(r => r * 8760 * 100);
+  const sortedAnn = [...annVals].sort((a,b)=>a-b);
+  let hLo = quantileSorted(sortedAnn, 0.005), hHi = quantileSorted(sortedAnn, 0.995);
+  if (!(hHi - hLo > 1e-9)) { hLo -= 0.5; hHi += 0.5; }
+  const NB = 41, bw = (hHi - hLo) / NB;
+  const histCounts = new Array(NB).fill(0);
+  for (const v of annVals) histCounts[clampNum(Math.floor((v - hLo)/bw), 0, NB-1)]++;
+  const hist = {
+    centers: Array.from({length:NB}, (_,i) => hLo + (i+0.5)*bw),
+    pct: histCounts.map(c => c / n * 100),
+    clippedLow: annVals.filter(v => v < hLo).length,
+    clippedHigh: annVals.filter(v => v > hHi).length
+  };
+
+  // ---- daily extremes ----
+  const dayRows = dayOrder.map((d,i) => ({ d, bps: daily.bps[i], ann: daily.annReal[i] }));
+  const worst = dayRows.filter(r => r.bps < 0).sort((a,b)=>a.bps-b.bps).slice(0,5);
+  const best  = dayRows.filter(r => r.bps > 0).sort((a,b)=>b.bps-a.bps).slice(0,5);
+
+  return {
+    n, first, last, hoursLife, spanDays: hoursLife/24,
+    cum: { lin: Slin[n-1]*100, cmp: Math.expm1(Slog[n-1])*100 },
+    cumBps: Slin[n-1]*1e4,
+    ann: { lin: annLin(Slin[n-1], hoursLife), cmp: annCmp(Slog[n-1], hoursLife) },
+    posSharePct: posH/n*100,
+    trailing, monthly, daily, roll30, roll7, worst, best, hist,
+    stats: {
+      meanBps: mu*1e4, sdBps: sd*1e4, skew, exKurt, ac1, ac24, halfLife,
+      streakPos, streakNeg,
+      ddShortBps: ddS*1e4, ddSFrom, ddSTo,
+      ddLongBps: ddL*1e4, ddLFrom, ddLTo
+    },
+    prem: { interest8h, interestEst, coverage: premCoverage, residMedAnnPct, residDailyMedAnnPct }
+  };
+}
+/*__ENDCORE__*/
+
+/* ---------- formatting ---------- */
+const fPct  = (v,d=2) => v==null||isNaN(v) ? "—" : (v>0?"+":"") + v.toFixed(d) + "%";
+const fBps  = (v,d=2) => v==null||isNaN(v) ? "—" : (v>0?"+":"") + v.toFixed(d) + " bps";
+const fNum  = v => v==null ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
+const fUsd0 = v => v==null ? "—" : "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+const signCls = v => v > 0 ? "pos" : v < 0 ? "neg" : "";
+function setStat(id, v, fmt) { const el = $(id); el.textContent = fmt(v); el.classList.remove("pos","neg"); const c = signCls(v); if (c) el.classList.add(c); }
+
+/* ---------- state ---------- */
+let UNIVERSE = [], DEXS = [];
+let selectedCoin = null, rangeDays = 0, MODE = "lin";
+let loadToken = 0, fetching = false;
+let LAST = null;                 // { M, currentHourly }
+
+/* ---------- universe ---------- */
+async function loadUniverse() {
+  try {
+    const perpDexs = await apiPost({ type:"perpDexs" });
+    DEXS = perpDexs.map(d => d === null
+      ? { value:"", label:"main", fullName:"Hyperliquid main" }
+      : { value:d.name, label:d.name, fullName:d.fullName || d.name });
+    const metas = await Promise.all(DEXS.map(d => apiPost(d.value ? { type:"meta", dex:d.value } : { type:"meta" })));
+    UNIVERSE = [];
+    metas.forEach((m, i) => {
+      for (const u of m.universe) UNIVERSE.push({ coin:u.name, dex:DEXS[i].value, dexLabel:DEXS[i].label, delisted:!!u.isDelisted });
+    });
+    for (const d of DEXS) {
+      const o = document.createElement("option");
+      o.value = d.value; o.textContent = d.label + (d.value ? " · " + d.fullName : "");
+      $("dexSel").appendChild(o);
+    }
+    $("status").textContent = UNIVERSE.length + " markets across " + DEXS.length + " dexs. Pick one.";
+  } catch (e) {
+    $("status").textContent = "Failed to load universe: " + e.message + ". Refresh to retry.";
+    $("status").classList.add("err");
+  }
+}
+
+/* ---------- combobox ---------- */
+const combo = $("comboList"), input = $("coinInput");
+let comboItems = [], comboActive = -1;
+function renderCombo() {
+  const q = input.value.trim().toLowerCase();
+  const dexF = $("dexSel").value;
+  let pool = UNIVERSE.filter(u => (dexF === "__all__" || u.dex === dexF) && (!q || u.coin.toLowerCase().includes(q)));
+  pool = pool.slice(0, 200);
+  combo.innerHTML = ""; comboItems = []; comboActive = -1;
+  let lastDex = null;
+  for (const u of pool) {
+    if (u.dexLabel !== lastDex) {
+      lastDex = u.dexLabel;
+      const g = document.createElement("div"); g.className = "combo-group"; g.textContent = u.dexLabel;
+      combo.appendChild(g);
+    }
+    const it = document.createElement("div");
+    it.className = "combo-item";
+    it.innerHTML = "<span>" + u.coin + (u.delisted ? " <span class='dl'>(delisted)</span>" : "") + "</span><span class='dl'>" + u.dexLabel + "</span>";
+    it.addEventListener("mousedown", ev => { ev.preventDefault(); pick(u); });
+    combo.appendChild(it); comboItems.push({ el: it, u });
+  }
+  combo.classList.toggle("open", pool.length > 0);
+}
+function pick(u) {
+  selectedCoin = u;
+  input.value = u.coin;
+  combo.classList.remove("open");
+  $("loadBtn").disabled = false;
+  $("status").textContent = u.coin + " on " + u.dexLabel + ". Set range and load.";
+  $("status").classList.remove("err");
+}
+input.addEventListener("input", () => { selectedCoin = null; if (!fetching) $("loadBtn").disabled = true; renderCombo(); });
+input.addEventListener("focus", renderCombo);
+input.addEventListener("blur", () => setTimeout(() => combo.classList.remove("open"), 120));
+input.addEventListener("keydown", e => {
+  if (!combo.classList.contains("open")) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    comboActive += e.key === "ArrowDown" ? 1 : -1;
+    comboActive = Math.max(0, Math.min(comboItems.length - 1, comboActive));
+    comboItems.forEach((c,i) => c.el.classList.toggle("active", i === comboActive));
+    comboItems[comboActive].el.scrollIntoView({ block:"nearest" });
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    const t = comboItems[comboActive >= 0 ? comboActive : 0];
+    if (t) pick(t.u);
+  } else if (e.key === "Escape") combo.classList.remove("open");
+});
+$("dexSel").addEventListener("change", renderCombo);
+$("rangeSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  [...$("rangeSeg").children].forEach(x => x.classList.remove("sel"));
+  b.classList.add("sel"); rangeDays = parseInt(b.dataset.d, 10);
+});
+$("modeSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  [...$("modeSeg").children].forEach(x => x.classList.remove("sel"));
+  b.classList.add("sel");
+  MODE = b.dataset.m === "compound" ? "cmp" : "lin";
+  $("convMode").innerHTML = MODE === "lin"
+    ? "annualized = &Sigma;r &times; 8760/T<sub>hrs</sub> (linear, wall-clock)"
+    : "annualized = &Pi;(1+r)<sup>8760/T</sup> &minus; 1 (compound, wall-clock)";
+  if (LAST) renderMetrics(LAST.M, LAST.currentHourly);
+});
+
+/* ---------- fetch funding (abortable) ---------- */
+async function fetchFunding(coin, startTime, token, onProgress) {
+  const out = [];
+  let t = startTime;
+  while (true) {
+    if (token !== loadToken) return null;
+    const batch = await apiPost({ type:"fundingHistory", coin, startTime: t });
+    if (token !== loadToken) return null;
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    out.push(...batch);
+    onProgress(out.length, batch[batch.length-1].time);
+    t = batch[batch.length-1].time + 1;
+    if (batch.length < 500) break;
+    await sleep(apiDelay);
+  }
+  return out;
+}
+
+/* ---------- charts ---------- */
+/* Colors are read from the CSS tokens so both themes stay in one place. */
+let C = {};
+const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return "rgba(" + (n>>16) + "," + (n>>8&255) + "," + (n&255) + "," + a + ")"; };
+function readTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const k of ["ink","muted","faint","grid","axis","panel","ground","actual","model","signal","pos","neg"]) C[k] = cs.getPropertyValue("--" + k).trim();
+  Chart.defaults.color = C.muted;
+  Chart.defaults.borderColor = C.grid;
+}
+readTheme();
+Chart.defaults.font.family = '"IBM Plex Mono", "IBM Plex Sans", monospace';
+Chart.defaults.font.size = 11;
+Chart.defaults.animation = false;
+let charts = {};
+const baseOpts = {
+  responsive:true, maintainAspectRatio:false,
+  interaction:{ mode:"index", intersect:false },
+  plugins:{ legend:{ labels:{ boxWidth:12, boxHeight:2 } }, tooltip:{ cornerRadius:0 } },
+  scales:{
+    x:{ ticks:{ maxTicksLimit:9, maxRotation:0 }, grid:{ display:false } },
+    y:{ ticks:{ callback:v => (+v).toFixed(Math.abs(v)<1?2:0) + "%" } }
+  }
+};
+const zeroLine = { id:"zeroLine", afterDraw(ch){ const y = ch.scales.y.getPixelForValue(0); if (isNaN(y) || y < ch.chartArea.top || y > ch.chartArea.bottom) return; const ctx = ch.ctx; ctx.save(); ctx.strokeStyle = C.faint; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(ch.chartArea.left, y); ctx.lineTo(ch.chartArea.right, y); ctx.stroke(); ctx.restore(); } };
+function killChart(k){ if (charts[k]) { charts[k].destroy(); delete charts[k]; } }
+
+function drawCharts(M) {
+  ["cum","roll","prem","hist","mon"].forEach(killChart);
+  const pickR = o => o == null ? null : o[MODE === "lin" ? "lin" : "cmp"];
+
+  charts.cum = new Chart($("chCum"), {
+    type:"line", plugins:[zeroLine],
+    data:{ labels:M.daily.labels, datasets:[{
+      label:"cumulative funding % (" + (MODE==="lin"?"Σ":"Π") + ")",
+      data: MODE==="lin" ? M.daily.cumLin : M.daily.cumCmp,
+      borderColor:C.actual, backgroundColor:rgba(C.actual, 0.08),
+      fill:true, borderWidth:2, tension:0,
+      // the LED: one square, on the latest print
+      pointStyle:"rect", pointBackgroundColor:C.signal, pointBorderWidth:0,
+      pointRadius: c => c.dataIndex === M.daily.labels.length - 1 ? 5 : 0,
+      pointHoverRadius: c => c.dataIndex === M.daily.labels.length - 1 ? 5 : 0
+    }]},
+    options: baseOpts
+  });
+
+  const segColor = ctx => (ctx.p1.parsed.y ?? 0) >= 0 ? C.pos : C.neg;
+  charts.roll = new Chart($("chRoll"), {
+    type:"line", plugins:[zeroLine],
+    data:{ labels:M.daily.labels, datasets:[
+      { label:"30d rolling", data: MODE==="lin"?M.roll30.lin:M.roll30.cmp, pointRadius:0, borderWidth:1.8, tension:0, spanGaps:false,
+        borderColor:C.ink, segment:{ borderColor: segColor } },
+      { label:"7d rolling", data: MODE==="lin"?M.roll7.lin:M.roll7.cmp, pointRadius:0, borderWidth:1, tension:0, spanGaps:false,
+        borderColor:C.faint }
+    ]},
+    options: baseOpts
+  });
+
+  charts.prem = new Chart($("chPrem"), {
+    type:"line", plugins:[zeroLine],
+    data:{ labels:M.daily.labels, datasets:[
+      { label:"realized funding (daily, ann.)", data:M.daily.annReal, borderColor:C.actual, pointRadius:0, borderWidth:1.4, tension:0 },
+      { label:"premium-implied (daily, ann.)", data:M.daily.annImpl, borderColor:C.model, borderDash:[4,3], pointRadius:0, borderWidth:1.4, tension:0, spanGaps:false }
+    ]},
+    options:{ ...baseOpts, plugins:{ ...baseOpts.plugins, tooltip:{ callbacks:{
+      afterBody: items => { const i = items[0].dataIndex; const p = M.daily.premBps[i];
+        const r = M.daily.annReal[i], im = M.daily.annImpl[i];
+        const lines = [];
+        if (p != null) lines.push("avg premium " + fBps(p,1));
+        if (r != null && im != null) lines.push("residual " + fPct(r-im,2) + " ann.");
+        return lines; }
+    }}}}
+  });
+
+  charts.hist = new Chart($("chHist"), {
+    type:"bar", plugins:[zeroLine],
+    data:{ labels:M.hist.centers.map(c=>c.toFixed(1)), datasets:[{
+      data:M.hist.pct,
+      backgroundColor:M.hist.centers.map(c=>c>=0?C.pos:C.neg),
+      borderWidth:0, barPercentage:1, categoryPercentage:1
+    }]},
+    options:{ ...baseOpts, plugins:{ legend:{ display:false }, tooltip:{ callbacks:{
+      title: items => "≈ " + items[0].label + "% annualized",
+      label: ctx => ctx.parsed.y.toFixed(2) + "% of hours"
+    }}},
+    scales:{ x:{ ticks:{ maxTicksLimit:9, maxRotation:0 }, grid:{ display:false } },
+             y:{ ticks:{ callback:v=>v+"%" } } } }
+  });
+
+  charts.mon = new Chart($("chMon"), {
+    type:"bar", plugins:[zeroLine],
+    data:{ labels:M.monthly.map(m=>m.month), datasets:[{
+      label:"annualized %", data:M.monthly.map(m=>MODE==="lin"?m.annLin:m.annCmp),
+      backgroundColor:M.monthly.map(m=>(MODE==="lin"?m.annLin:m.annCmp)>=0?C.pos:C.neg),
+      borderWidth:0
+    }]},
+    options:{ ...baseOpts, plugins:{ legend:{ display:false }, tooltip:{ callbacks:{
+      afterLabel: ctx => { const m = M.monthly[ctx.dataIndex]; return fBps(m.bps) + " · " + m.posPct.toFixed(0) + "% hrs positive"; }
+    }}}}
+  });
+}
+
+/* ---------- regime tape (p99, sqrt scale) ---------- */
+let tapeData = null;
+function drawTape(M) {
+  tapeData = M;
+  const cv = $("tape"), ctx = cv.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = 36;
+  cv.width = w * dpr; cv.height = h * dpr; ctx.scale(dpr, dpr);
+  ctx.clearRect(0,0,w,h);
+  const bps = M.daily.bps, n = bps.length;
+  const abs = bps.map(Math.abs).sort((a,b)=>a-b);
+  const p99 = quantileSorted(abs, 0.99) || 1;
+  const colW = w / n;
+  for (let i = 0; i < n; i++) {
+    const v = bps[i];
+    const a = Math.sqrt(Math.min(1, Math.abs(v)/p99)) * 0.85 + 0.1;
+    ctx.fillStyle = rgba(v >= 0 ? C.pos : C.neg, a);
+    ctx.fillRect(i*colW, 0, Math.max(colW-0.5, 0.75), h);
+  }
+}
+$("tape").addEventListener("mousemove", e => {
+  if (!tapeData) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  const i = Math.min(tapeData.daily.bps.length-1, Math.max(0, Math.floor((e.clientX-r.left)/r.width*tapeData.daily.bps.length)));
+  const bps = tapeData.daily.bps[i];
+  $("tapeinfo").textContent = tapeData.daily.labels[i] + " · " + fBps(bps) + " · " + (bps>=0?"longs paid":"longs received");
+});
+window.addEventListener("resize", () => { if (tapeData) drawTape(tapeData); });
+
+/* ---------- market strip ---------- */
+async function loadMarketStrip(u) {
+  try {
+    const [meta, ctxs] = await apiPost(u.dex ? { type:"metaAndAssetCtxs", dex:u.dex } : { type:"metaAndAssetCtxs" });
+    const i = meta.universe.findIndex(x => x.name === u.coin);
+    if (i < 0) return null;
+    const c = ctxs[i];
+    $("msCoin").textContent = u.coin;
+    $("msDex").textContent = u.dexLabel;
+    $("msMark").textContent = fNum(c.markPx);
+    $("msOracle").textContent = fNum(c.oraclePx);
+    $("msOI").textContent = fNum(c.openInterest) + " (" + fUsd0(c.openInterest * c.markPx) + ")";
+    $("msVol").textContent = fUsd0(c.dayNtlVlm);
+    $("msPrem").textContent = c.premium == null ? "—" : (parseFloat(c.premium)*100).toFixed(3) + "%";
+    $("mktstrip").classList.add("on");
+    return parseFloat(c.funding);
+  } catch { return null; }
+}
+
+/* ---------- render ---------- */
+function fmtHL(h) { return !isFinite(h) || h <= 0 ? "—" : h < 48 ? h.toFixed(1) + " h" : (h/24).toFixed(1) + " d"; }
+function renderMetrics(M, currentHourly) {
+  $("emptyPanel").classList.add("hide");
+  ["cards","pCum","pRoll","pHist","pStats","pMonBar","pMonTab","pWorst","pBest"].forEach(id => $(id).classList.remove("hide"));
+  $("tapebox").classList.add("on");
+  const mv = o => o == null ? null : (MODE === "lin" ? o.lin : o.cmp);
+
+  const rt = rangeDays === 0 ? "· inception" : "· " + rangeDays + "d";
+  $("rangeTag1").textContent = rt; $("rangeTag2").textContent = rt;
+  setStat("cCum", mv(M.cum), v => fPct(v, 4));
+  $("cCumBps").textContent = fBps(M.cumBps, 1) + " · " + (M.cumBps >= 0 ? "longs paid net" : "longs received net");
+  setStat("cAnn", mv(M.ann), fPct);
+  $("cAnnNote").textContent = "over " + M.spanDays.toFixed(0) + " days wall-clock";
+  setStat("c7",  mv(M.trailing[7]),  fPct);
+  setStat("c30", mv(M.trailing[30]), fPct);
+  setStat("c90", mv(M.trailing[90]), fPct);
+  if (currentHourly != null && !isNaN(currentHourly)) {
+    setStat("cNow", currentHourly * 8760 * 100, fPct);
+    $("cNowSub").textContent = "hourly " + (currentHourly*100).toFixed(6) + "%";
+  } else { $("cNow").textContent = "—"; $("cNowSub").textContent = "annualized"; }
+  $("cPos").textContent = M.posSharePct.toFixed(0) + "%";
+  $("cPosSub").textContent = M.n.toLocaleString() + " hourly prints";
+  $("cSpan").textContent = M.daily.labels[0] + " →";
+  $("cSpanSub").textContent = M.daily.labels[M.daily.labels.length-1] + " · " + M.spanDays.toFixed(0) + "d";
+  $("cumSub").textContent = MODE === "lin" ? "running Σ of hourly rates, %" : "running Π(1+r) − 1, %";
+
+  // premium panel
+  const P = M.prem;
+  if (P.coverage >= 0.5) {
+    $("pPrem").classList.remove("hide");
+    $("premSub").innerHTML = "interest ≈ " + (P.interest8h*100).toFixed(4) + "%/8h " +
+      (P.interestEst ? "(est. from clamp-bound prints)" : "(default — too few calm prints to estimate)") +
+      " · median daily |resid| " + fPct(P.residDailyMedAnnPct, 2) + " ann. · standard clamp ±0.05%; divergence is diagnostic";
+  } else {
+    $("pPrem").classList.add("hide");
+  }
+
+  drawTape(M);
+  drawCharts(M);
+
+  // persistence & tails
+  const S = M.stats;
+  $("statsBody").innerHTML = [
+    ["Mean hourly rate", fBps(S.meanBps, 3) + " · σ " + S.sdBps.toFixed(3) + " bps"],
+    ["Skew / excess kurtosis", (isNaN(S.skew)?"—":S.skew.toFixed(2)) + " / " + (isNaN(S.exKurt)?"—":S.exKurt.toFixed(1))],
+    ["Autocorr AC(1) / AC(24)", (isNaN(S.ac1)?"—":S.ac1.toFixed(3)) + " / " + (isNaN(S.ac24)?"—":S.ac24.toFixed(3))],
+    ["Half-life (AR(1) approx)", fmtHL(S.halfLife)],
+    ["Longest positive streak", S.streakPos.len ? S.streakPos.len + " h → " + utcDay(S.streakPos.end) : "—"],
+    ["Longest negative streak", S.streakNeg.len ? S.streakNeg.len + " h → " + utcDay(S.streakNeg.end) : "—"],
+    ["Max DD, short carry", fBps(S.ddShortBps,1) + (S.ddShortBps>0 ? " · " + utcDay(S.ddSFrom) + " → " + utcDay(S.ddSTo) : "")],
+    ["Max DD, long carry", fBps(S.ddLongBps,1) + (S.ddLongBps>0 ? " · " + utcDay(S.ddLFrom) + " → " + utcDay(S.ddLTo) : "")]
+  ].map(r => "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>").join("");
+
+  $("monBody").innerHTML = M.monthly.map(m => {
+    const a = MODE==="lin"?m.annLin:m.annCmp;
+    return "<tr><td>" + m.month + "</td><td class='" + signCls(m.bps) + "'>" + fBps(m.bps,1) + "</td><td class='" + signCls(a) + "'>" + fPct(a) + "</td><td>" + m.posPct.toFixed(0) + "%</td></tr>";
+  }).join("");
+  const noDays = "<tr><td colspan='3'>None in this range</td></tr>";
+  $("worstBody").innerHTML = M.worst.length ? M.worst.map(r =>
+    "<tr><td>" + r.d + "</td><td class='neg'>" + fBps(r.bps) + "</td><td class='neg'>" + fPct(r.ann,1) + "</td></tr>").join("") : noDays;
+  $("bestBody").innerHTML = M.best.length ? M.best.map(r =>
+    "<tr><td>" + r.d + "</td><td class='pos'>" + fBps(r.bps) + "</td><td class='pos'>" + fPct(r.ann,1) + "</td></tr>").join("") : noDays;
+}
+
+/* ---------- load flow (abortable) ---------- */
+function setBtn(state) {
+  const b = $("loadBtn");
+  if (state === "fetch") { b.textContent = "Abort"; b.classList.add("abort"); b.disabled = false; }
+  else { b.textContent = "Load funding"; b.classList.remove("abort"); b.disabled = !selectedCoin; }
+}
+$("loadBtn").addEventListener("click", async () => {
+  if (fetching) {           // abort path
+    loadToken++;
+    return;
+  }
+  if (!selectedCoin) return;
+  const u = selectedCoin;
+  const token = ++loadToken;
+  fetching = true; setBtn("fetch");
+  $("status").classList.remove("err");
+  $("prog").classList.add("on"); $("progBar").style.width = "4%";
+  const startTime = rangeDays === 0 ? 1672531200000 : Date.now() - rangeDays * DAY;
+  const expectedHours = rangeDays === 0 ? null : rangeDays * 24;
+  try {
+    const stripP = loadMarketStrip(u);
+    const events = await fetchFunding(u.coin, startTime, token, (count, lastTs) => {
+      $("status").textContent = u.coin + " · " + count.toLocaleString() + " events · through " + utcDay(lastTs);
+      const frac = expectedHours ? Math.min(0.97, count/expectedHours) : Math.min(0.97, count/30000);
+      $("progBar").style.width = (4 + frac*96) + "%";
+    });
+    if (events === null) {
+      $("status").textContent = u.coin + ": aborted. Partial data discarded (a truncated series would misstate trailing figures).";
+      $("prog").classList.remove("on");
+      return;
+    }
+    if (!events.length) {
+      $("status").textContent = u.coin + ": no funding history in this range (new listing or delisted before window).";
+      $("prog").classList.remove("on");
+      return;
+    }
+    const { times, rates, prems } = buildSeries(events);
+    const M = computeAll(times, rates, prems);
+    const currentHourly = await stripP;
+    LAST = { M, currentHourly };
+    renderMetrics(M, currentHourly);
+    $("status").textContent = u.coin + " · " + M.n.toLocaleString() + " hourly prints · " + M.daily.labels[0] + " → " + M.daily.labels[M.daily.labels.length-1];
+    $("progBar").style.width = "100%";
+    setTimeout(() => $("prog").classList.remove("on"), 400);
+  } catch (e) {
+    $("status").textContent = "Load failed: " + e.message;
+    $("status").classList.add("err");
+    $("prog").classList.remove("on");
+  } finally {
+    fetching = false; setBtn("idle");
+  }
+});
+
+function applyTheme() { readTheme(); if (LAST) { drawTape(LAST.M); drawCharts(LAST.M); } }
+$("themeBtn").addEventListener("click", () => {
+  const root = document.documentElement;
+  const cur = root.dataset.theme || (matchMedia("(prefers-color-scheme: light)").matches ? "paper" : "night");
+  root.dataset.theme = cur === "paper" ? "night" : "paper";
+  try { localStorage.setItem("theme", root.dataset.theme); } catch (e) {}
+  applyTheme();
+});
+matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyTheme);
+
+loadUniverse();
+</script>
+</body>
+</html>
