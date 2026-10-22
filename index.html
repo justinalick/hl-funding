@@ -733,7 +733,11 @@ const baseOpts = {
   plugins:{ legend:{ labels:{ boxWidth:12, boxHeight:2 } }, tooltip:{ cornerRadius:0 } },
   scales:{
     x:{ ticks:{ maxTicksLimit:9, maxRotation:0 }, grid:{ display:false } },
-    y:{ ticks:{ callback:v => (+v).toFixed(Math.abs(v)<1?2:0) + "%" } }
+    // as many decimals as the tick step needs, so labels never repeat
+    y:{ ticks:{ callback:(v, i, ticks) => {
+      const step = ticks.length > 1 ? Math.abs(ticks[1].value - ticks[0].value) : 1;
+      return (+v).toFixed(clampNum(Math.ceil(-Math.log10(step) - 1e-9), 0, 4)) + "%";
+    } } }
   }
 };
 const zeroLine = { id:"zeroLine", afterDraw(ch){ const y = ch.scales.y.getPixelForValue(0); if (isNaN(y) || y < ch.chartArea.top || y > ch.chartArea.bottom) return; const ctx = ch.ctx; ctx.save(); ctx.strokeStyle = C.faint; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(ch.chartArea.left, y); ctx.lineTo(ch.chartArea.right, y); ctx.stroke(); ctx.restore(); } };
