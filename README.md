@@ -1,4 +1,4 @@
-# Hyperliquid funding
+# Hyperliquid Funding
 
 Full funding history for any Hyperliquid perp, including the HIP-3 dexs: cumulative and annualized funding, rolling and trailing windows, realized funding against what the premium implies, the rate distribution, persistence, calendar months and the heaviest days.
 
