@@ -633,7 +633,7 @@ function readURL() {
   const r = Object.keys(RANGE_KEYS).find(k => RANGE_KEYS[k] === (q.get("range") || "").toLowerCase());
   if (r !== undefined) setRange(+r);
   if ((q.get("mode") || "").toLowerCase() === "compound") setMode("cmp");
-  return (q.get("coin") || "").trim().toLowerCase();
+  return (q.get("coin") || "").trim();
 }
 
 /* ---------- universe ---------- */
@@ -655,7 +655,7 @@ async function loadUniverse() {
     }
     $("status").textContent = UNIVERSE.length + " markets across " + DEXS.length + " dexs. Pick one.";
     // Open on the linked market, else xyz:JPY, so the page shows data straight away.
-    const want = readURL();
+    const want = WANT.toLowerCase();
     const live = UNIVERSE.filter(u => !u.delisted);
     const def = (want && (live.find(u => u.coin.toLowerCase() === want) || UNIVERSE.find(u => u.coin.toLowerCase() === want)))
       || live.find(u => u.coin === "xyz:JPY");
@@ -727,21 +727,55 @@ $("modeSeg").addEventListener("click", e => {
 });
 
 /* ---------- fetch funding (abortable) ---------- */
+// History is fetched in fixed 20-day windows aligned to the epoch, four at a
+// time. Fixed windows mean every visitor asks for the same pieces, so the relay
+// serves finished ones from its edge cache. The first page is fetched alone to
+// find where the market's history actually starts.
+const WIN = 480 * HR, PAR = 4;
+const histStart = days => days === 0 ? 1672531200000 : Date.now() - days * DAY;
+// Funding requests made in the last minute are reused, so the head-start
+// fetch below and the visible load share their calls.
+const fhMemo = new Map();
+function fundingPage(body) {
+  const k = JSON.stringify(body), hit = fhMemo.get(k);
+  if (hit && Date.now() - hit.at < 60e3) return hit.p;
+  const p = apiPost(body);
+  fhMemo.set(k, { p, at: Date.now() });
+  p.catch(() => fhMemo.delete(k));
+  return p;
+}
 async function fetchFunding(coin, startTime, token, onProgress) {
+  const live = () => token == null || token === loadToken;
   const out = [];
-  let t = startTime;
-  while (true) {
-    if (token !== loadToken) return null;
-    const batch = await apiPost({ type:"fundingHistory", coin, startTime: t });
-    if (token !== loadToken) return null;
-    if (!Array.isArray(batch) || batch.length === 0) break;
-    out.push(...batch);
-    onProgress(out.length, batch[batch.length-1].time);
-    t = batch[batch.length-1].time + 1;
-    if (batch.length < 500) break;
-    await sleep(apiDelay);
+  let count = 0, latest = 0;
+  const got = batch => { out.push(...batch); count += batch.length; latest = Math.max(latest, batch[batch.length-1].time); onProgress(count, latest); };
+  const first = await fundingPage({ type:"fundingHistory", coin, startTime: Math.floor(startTime / WIN) * WIN });
+  if (!live()) return null;
+  if (!Array.isArray(first) || first.length === 0) return [];
+  got(first);
+  if (first.length === 500) {
+    const wins = [];
+    let s = first[499].time + 1;
+    while (s <= Date.now()) { const e = (Math.floor(s / WIN) + 1) * WIN - 1; wins.push([s, e]); s = e + 1; }
+    let next = 0;
+    const worker = async () => {
+      while (next < wins.length && live()) {
+        let [s, e] = wins[next++];
+        while (live()) {
+          const b = await fundingPage({ type:"fundingHistory", coin, startTime: s, endTime: e });
+          if (!Array.isArray(b) || b.length === 0) break;
+          got(b);
+          if (b.length < 500) break;
+          s = b[499].time + 1;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: PAR }, worker));
+    if (!live()) return null;
   }
-  return out;
+  const seen = new Set();
+  return out.sort((a, b) => a.time - b.time)
+    .filter(e => e.time >= startTime && !seen.has(e.time) && seen.add(e.time));
 }
 
 /* ---------- charts ---------- */
@@ -1006,7 +1040,7 @@ $("loadBtn").addEventListener("click", async () => {
   fetching = true; setBtn("fetch");
   $("status").classList.remove("err");
   $("prog").classList.add("on"); $("progBar").style.width = "4%";
-  const startTime = rangeDays === 0 ? 1672531200000 : Date.now() - rangeDays * DAY;
+  const startTime = histStart(rangeDays);
   const expectedHours = rangeDays === 0 ? null : rangeDays * 24;
   try {
     const stripP = loadMarketStrip(u);
@@ -1053,6 +1087,10 @@ $("themeBtn").addEventListener("click", () => {
 });
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyTheme);
 
+// Start fetching the opening market's history while the market list loads;
+// the visible load then reuses these calls instead of waiting on them.
+const WANT = readURL();
+fetchFunding(WANT || "xyz:JPY", histStart(rangeDays), null, () => {}).catch(() => {});
 loadUniverse();
 </script>
 </body>
