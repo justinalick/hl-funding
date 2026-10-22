@@ -619,6 +619,9 @@ async function loadUniverse() {
       $("dexSel").appendChild(o);
     }
     $("status").textContent = UNIVERSE.length + " markets across " + DEXS.length + " dexs. Pick one.";
+    // Open on xyz:JPY so the page shows data straight away.
+    const def = UNIVERSE.find(u => u.coin === "xyz:JPY" && !u.delisted);
+    if (def) { pick(def); $("loadBtn").click(); }
   } catch (e) {
     $("status").textContent = "Failed to load universe: " + e.message + ". Refresh to retry.";
     $("status").classList.add("err");
