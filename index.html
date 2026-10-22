@@ -607,6 +607,35 @@ let selectedCoin = null, rangeDays = 0, MODE = "lin";
 let loadToken = 0, fetching = false;
 let LAST = null;                 // { M, currentHourly }
 
+/* ---------- shareable URL: ?coin=xyz:JPY&range=1y&mode=compound ---------- */
+const RANGE_KEYS = { 0:"inception", 365:"1y", 180:"180d", 90:"90d" };
+function setRange(d) {
+  rangeDays = d;
+  [...$("rangeSeg").children].forEach(x => x.classList.toggle("sel", +x.dataset.d === d));
+}
+function setMode(m) {
+  MODE = m;
+  [...$("modeSeg").children].forEach(x => x.classList.toggle("sel", (x.dataset.m === "compound") === (m === "cmp")));
+  $("convMode").innerHTML = MODE === "lin"
+    ? "annualized = &Sigma;r &times; 8760/T<sub>hrs</sub> (linear, wall-clock)"
+    : "annualized = &Pi;(1+r)<sup>8760/T</sup> &minus; 1 (compound, wall-clock)";
+}
+// The URL describes what is on screen: written after a load and on a mode switch,
+// with defaults (inception, linear) left out.
+function writeURL(u) {
+  const q = ["coin=" + encodeURIComponent(u.coin).replace(/%3A/g, ":")];
+  if (rangeDays) q.push("range=" + RANGE_KEYS[rangeDays]);
+  if (MODE === "cmp") q.push("mode=compound");
+  history.replaceState(null, "", location.pathname + "?" + q.join("&"));
+}
+function readURL() {
+  const q = new URLSearchParams(location.search);
+  const r = Object.keys(RANGE_KEYS).find(k => RANGE_KEYS[k] === (q.get("range") || "").toLowerCase());
+  if (r !== undefined) setRange(+r);
+  if ((q.get("mode") || "").toLowerCase() === "compound") setMode("cmp");
+  return (q.get("coin") || "").trim().toLowerCase();
+}
+
 /* ---------- universe ---------- */
 async function loadUniverse() {
   try {
@@ -625,8 +654,11 @@ async function loadUniverse() {
       $("dexSel").appendChild(o);
     }
     $("status").textContent = UNIVERSE.length + " markets across " + DEXS.length + " dexs. Pick one.";
-    // Open on xyz:JPY so the page shows data straight away.
-    const def = UNIVERSE.find(u => u.coin === "xyz:JPY" && !u.delisted);
+    // Open on the linked market, else xyz:JPY, so the page shows data straight away.
+    const want = readURL();
+    const live = UNIVERSE.filter(u => !u.delisted);
+    const def = (want && (live.find(u => u.coin.toLowerCase() === want) || UNIVERSE.find(u => u.coin.toLowerCase() === want)))
+      || live.find(u => u.coin === "xyz:JPY");
     if (def) { pick(def); $("loadBtn").click(); }
   } catch (e) {
     $("status").textContent = "Failed to load universe: " + e.message + ". Refresh to retry.";
@@ -686,18 +718,12 @@ input.addEventListener("keydown", e => {
 $("dexSel").addEventListener("change", renderCombo);
 $("rangeSeg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  [...$("rangeSeg").children].forEach(x => x.classList.remove("sel"));
-  b.classList.add("sel"); rangeDays = parseInt(b.dataset.d, 10);
+  setRange(parseInt(b.dataset.d, 10));
 });
 $("modeSeg").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  [...$("modeSeg").children].forEach(x => x.classList.remove("sel"));
-  b.classList.add("sel");
-  MODE = b.dataset.m === "compound" ? "cmp" : "lin";
-  $("convMode").innerHTML = MODE === "lin"
-    ? "annualized = &Sigma;r &times; 8760/T<sub>hrs</sub> (linear, wall-clock)"
-    : "annualized = &Pi;(1+r)<sup>8760/T</sup> &minus; 1 (compound, wall-clock)";
-  if (LAST) renderMetrics(LAST.M, LAST.currentHourly);
+  setMode(b.dataset.m === "compound" ? "cmp" : "lin");
+  if (LAST) { renderMetrics(LAST.M, LAST.currentHourly); writeURL(LAST.u); }
 });
 
 /* ---------- fetch funding (abortable) ---------- */
@@ -1002,8 +1028,9 @@ $("loadBtn").addEventListener("click", async () => {
     const { times, rates, prems } = buildSeries(events);
     const M = computeAll(times, rates, prems);
     const currentHourly = await stripP;
-    LAST = { M, currentHourly };
+    LAST = { M, currentHourly, u };
     renderMetrics(M, currentHourly);
+    writeURL(u);
     $("status").textContent = u.coin + " · " + M.n.toLocaleString() + " hourly prints · " + M.daily.labels[0] + " → " + M.daily.labels[M.daily.labels.length-1];
     $("progBar").style.width = "100%";
     setTimeout(() => $("prog").classList.remove("on"), 400);
