@@ -40,8 +40,11 @@ function canonical(q) {
 function ttl(q, data) {
   if (q.type === "perpDexs" || q.type === "meta") return 600;
   if (q.type === "metaAndAssetCtxs") return 10;
-  // A full page of funding that ends over two hours ago can never change.
-  if (Array.isArray(data) && data.length === 500 && data[499].time < Date.now() - 2 * 3600e3) return 86400;
+  // Funding that ends over two hours ago can never change: a full page, or a
+  // window whose end time has passed.
+  const old = Date.now() - 2 * 3600e3;
+  if (Array.isArray(data) && data.length === 500 && data[499].time < old) return 86400;
+  if (q.endTime !== undefined && q.endTime < old) return 86400;
   return 60;
 }
 
