@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hyperliquid funding, @justinalick</title>
+<title>Hyperliquid Funding, @justinalick</title>
 <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png">
 <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -222,7 +222,7 @@ footer a { color:var(--muted); }
 <div class="wrap">
 
 <header>
-  <div class="title"><h1>Hyperliquid funding</h1><span class="vape" aria-hidden="true"></span></div>
+  <div class="title"><h1>Hyperliquid Funding</h1><span class="vape" aria-hidden="true"></span></div>
   <div class="byline">
     <button class="theme-toggle" type="button" aria-label="Switch light or dark theme" id="themeBtn"><span class="dot" aria-hidden="true"></span></button>
     <a class="handle" href="https://x.com/justinalick" rel="me noopener">@justinalick</a>
@@ -564,7 +564,10 @@ function computeAll(times, rates, prems) {
     centers: Array.from({length:NB}, (_,i) => hLo + (i+0.5)*bw),
     pct: histCounts.map(c => c / n * 100),
     clippedLow: annVals.filter(v => v < hLo).length,
-    clippedHigh: annVals.filter(v => v > hHi).length
+    clippedHigh: annVals.filter(v => v > hHi).length,
+    mean: mu * 8760 * 100,
+    median: n % 2 ? sortedAnn[(n-1)/2] : (sortedAnn[n/2-1] + sortedAnn[n/2]) / 2,
+    lo: hLo, bw
   };
 
   // ---- daily extremes ----
@@ -744,6 +747,29 @@ const baseOpts = {
   }
 };
 const zeroLine = { id:"zeroLine", afterDraw(ch){ const y = ch.scales.y.getPixelForValue(0); if (isNaN(y) || y < ch.chartArea.top || y > ch.chartArea.bottom) return; const ctx = ch.ctx; ctx.save(); ctx.strokeStyle = C.faint; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(ch.chartArea.left, y); ctx.lineTo(ch.chartArea.right, y); ctx.stroke(); ctx.restore(); } };
+// mean (solid) and median (dashed) of the histogram, labelled at the top; the
+// lower value's label sits left of its line, the higher one's right
+const centerLines = { id:"centerLines", afterDraw(ch, _, H){
+  if (!isFinite(H.bw)) return;
+  const a = ch.chartArea, ctx = ch.ctx;
+  const marks = [{ v:H.mean, name:"mean", dash:[] }, { v:H.median, name:"median", dash:[4,3] }];
+  const loV = Math.min(H.mean, H.median);
+  ctx.save();
+  ctx.font = '11px "IBM Plex Mono", monospace'; ctx.textBaseline = "top";
+  marks.forEach((m, k) => {
+    const x = ch.scales.x.getPixelForValue((m.v - H.lo) / H.bw - 0.5);
+    if (!isFinite(x) || x < a.left || x > a.right) return;
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 1; ctx.setLineDash(m.dash);
+    ctx.beginPath(); ctx.moveTo(x, a.top); ctx.lineTo(x, a.bottom); ctx.stroke();
+    const txt = m.name + " " + fPct(m.v, 1);
+    const left = m.v === loV && H.mean !== H.median;
+    const w = ctx.measureText(txt).width;
+    const tx = left ? Math.max(a.left, x - 4 - w) : Math.min(a.right - w, x + 4);
+    ctx.fillStyle = C.ink; ctx.textAlign = "left";
+    ctx.fillText(txt, tx, a.top + 2 + k * 14);
+  });
+  ctx.restore();
+} };
 function killChart(k){ if (charts[k]) { charts[k].destroy(); delete charts[k]; } }
 
 function drawCharts(M) {
@@ -794,18 +820,21 @@ function drawCharts(M) {
   });
 
   charts.hist = new Chart($("chHist"), {
-    type:"bar", plugins:[zeroLine],
+    type:"bar", plugins:[zeroLine, centerLines],
     data:{ labels:M.hist.centers.map(c=>c.toFixed(1)), datasets:[{
       data:M.hist.pct,
       backgroundColor:M.hist.centers.map(c=>c>=0?C.pos:C.neg),
       borderWidth:0, barPercentage:1, categoryPercentage:1
     }]},
-    options:{ ...baseOpts, plugins:{ legend:{ display:false }, tooltip:{ callbacks:{
+    options:{ ...baseOpts, plugins:{ legend:{ display:false },
+      centerLines:{ mean:M.hist.mean, median:M.hist.median, lo:M.hist.lo, bw:M.hist.bw },
+      tooltip:{ callbacks:{
       title: items => "≈ " + items[0].label + "% annualized",
       label: ctx => ctx.parsed.y.toFixed(2) + "% of hours"
     }}},
     scales:{ x:{ ticks:{ maxTicksLimit:9, maxRotation:0 }, grid:{ display:false } },
-             y:{ ticks:{ callback:v=>v+"%" } } } }
+             // headroom so the mean/median labels clear the tallest bar
+             y:{ grace:"18%", ticks:{ callback:v=>v+"%" } } } }
   });
 
   charts.mon = new Chart($("chMon"), {
