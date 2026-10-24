@@ -43,6 +43,7 @@ writeFileSync("dist/_headers", `${BASE}/*
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   X-Frame-Options: DENY
   X-Robots-Tag: noindex
+  Strict-Transport-Security: max-age=31536000
 
 ${BASE}/
   Cache-Control: public, max-age=0, must-revalidate, no-transform
