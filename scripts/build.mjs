@@ -9,7 +9,7 @@ const out = `dist${BASE}`;
 
 rmSync("dist", { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
-for (const f of ["index.html", "LICENSE", "NOTICE"]) cpSync(f, `${out}/${f}`);
+for (const f of ["index.html", "og-v1.png", "LICENSE", "NOTICE"]) cpSync(f, `${out}/${f}`);
 cpSync("vendor", `${out}/vendor`, { recursive: true });
 
 const html = readFileSync("index.html", "utf8");
